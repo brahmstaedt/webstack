@@ -1,0 +1,12 @@
+# Install: see README.md, section "Automatic updates".
+# Adjust the path if the repository is not in /srv/webstack.
+[Unit]
+Description=webstack: update proxy and app containers (verified, with rollback)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/webstack
+ExecStart=/srv/webstack/update.sh

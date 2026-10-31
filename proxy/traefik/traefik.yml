@@ -1,0 +1,61 @@
+# Traefik static configuration.
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      # Every router on :443 gets TLS with a Let's Encrypt certificate automatically.
+      tls:
+        certResolver: letsencrypt
+      # Runs BEFORE any router middleware: removes identity headers a client might
+      # send to impersonate a user. Authelia re-adds them on protected routes.
+      middlewares:
+        - strip-auth-headers@file
+        - security-headers@file     # HSTS, nosniff, frame and referrer policy for every app
+  # Dashboard and API (api.insecure below). Published only on 127.0.0.1 of the host,
+  # see proxy/docker-compose.yml. It cannot live on the public domain: it needs the root
+  # paths /dashboard and /api, which would collide with apps on a single-domain install.
+  traefik:
+    address: ":8080"
+
+providers:
+  docker:
+    endpoint: "tcp://socket-proxy:2375"
+    exposedByDefault: false     # containers need traefik.enable=true
+    network: proxy
+  file:
+    # Every *.yml in proxy/traefik/dynamic/ (the local test adds a certificate file here)
+    directory: /etc/traefik/dynamic
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      # Optional contact address for your Let's Encrypt account. If set, it must be a real
+      # address (Let's Encrypt rejects e.g. example.com).
+      # email: you@your-domain.example
+      storage: /letsencrypt/acme.json
+      # Uncomment while testing to avoid Let's Encrypt rate limits (certs will be untrusted):
+      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      httpChallenge:
+        entryPoint: web
+      # Port 80 not reachable / want wildcards? Use DNS-01 instead, e.g.:
+      # dnsChallenge:
+      #   provider: <your DNS provider>   # see Traefik docs; API token as env var on the traefik container
+
+api:
+  dashboard: true
+  insecure: true   # = served on the "traefik" entrypoint (:8080), which is not public
+
+log:
+  level: INFO
+
+accessLog: {}

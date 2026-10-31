@@ -1,0 +1,78 @@
+# Front proxy stack: Traefik (routing + TLS) + Authelia (login) + Docker socket proxy.
+# Configuration: proxy/.env (copy .env.example, then run ../generate-secrets.sh).
+# Start once per VM:  docker compose up -d   (from this directory)
+name: proxy
+
+x-logging: &logging
+  driver: local            # rotated logs (Docker's default json-file grows without limit)
+
+services:
+  # Traefik only gets read access to the container list via this proxy,
+  # never the raw Docker socket (raw socket access == root on the host).
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0  # exact version: no minor-series tag published
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      CONTAINERS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket
+
+  traefik:
+    image: traefik:v3.7           # minor series: auto-update pulls patch releases
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      DOMAIN: ${DOMAIN:?missing - set DOMAIN in proxy/.env}   # used by traefik/dynamic/portal.yml
+    depends_on:
+      - socket-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+      # Dashboard: only on the VM itself. From your machine: ssh -L 8080:127.0.0.1:8080 <vm>,
+      # then open http://localhost:8080/dashboard/
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - proxy
+      - socket
+
+  authelia:
+    image: authelia/authelia:4.39  # minor series: auto-update pulls patch releases
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # Authelia runs as this host user and owns ./authelia/config (incl. data/).
+      # Set in proxy/.env by ../generate-secrets.sh. Unset, the container would run
+      # as root and take ownership of the files.
+      PUID: ${PUID:?missing - run ./generate-secrets.sh}
+      PGID: ${PGID:?missing - run ./generate-secrets.sh}
+      # configuration.yml uses {{ env "DOMAIN" }}
+      DOMAIN: ${DOMAIN:?missing - set DOMAIN in proxy/.env}
+      X_AUTHELIA_CONFIG_FILTERS: template
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /secrets/jwt_secret
+      AUTHELIA_SESSION_SECRET_FILE: /secrets/session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /secrets/storage_encryption_key
+    volumes:
+      - ./authelia/config:/config          # configuration.yml + users_database.yml
+      - ./authelia/data:/config/data       # SQLite DB + notification.txt (below /config so it gets PUID ownership)
+      - ./authelia/secrets:/secrets:ro     # created by ../generate-secrets.sh
+    networks:
+      - proxy
+    # The portal (https://<DOMAIN>/auth/) is routed in traefik/dynamic/portal.yml, not via labels.
+
+networks:
+  # Shared network that every app container joins. Apps publish NO ports.
+  proxy:
+    name: proxy
+  # Only Traefik and the socket proxy; no outside access.
+  socket:
+    internal: true
+
+volumes:
+  letsencrypt:

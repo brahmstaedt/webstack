@@ -1,0 +1,65 @@
+# Example project. traefik/whoami echoes back the request it receives, so it shows
+# exactly what your backend would see (path, X-Forwarded-Prefix, Remote-User, ...).
+# It is optional: the proxy works without it, and verify.sh only tests it if it is deployed.
+#
+# Each service has exactly ONE address, chosen per installation in apps/whoami/.env:
+#   *_HOST  its own hostname, e.g. private.example.com        -> https://private.example.com/
+#   *_PATH  a sub-path on DOMAIN, e.g. /private (single-domain) -> https://example.com/private/
+# Set one of the two, never both.
+#
+# Template for your own projects (see docs/app-interface.md):
+#   - join the external "proxy" network, publish NO ports
+#   - router rule from the host OR the path (copy the pattern)
+#   - with a path, the prefix is stripped: the app receives "/" and X-Forwarded-Prefix
+#   - add authelia@file as middleware if login is required. It MUST come BEFORE the
+#     strip middleware: Authelia's path rules (e.g. ^/private/admin) need the original path.
+#   - router/middleware/service names must be unique on the whole host
+#   - optional: webstack.startpage.name / .description / .logo labels for the start page
+name: whoami
+
+x-logging: &logging
+  driver: local            # rotated logs (Docker's default json-file grows without limit)
+
+services:
+  # Protected: login required. /admin is limited to group "admins" (Authelia rules).
+  private:
+    image: traefik/whoami:v1.12
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.whoami-private.rule=${PRIVATE_HOST:+Host(`${PRIVATE_HOST}`)}${PRIVATE_PATH:+Host(`${DOMAIN}`) && (Path(`${PRIVATE_PATH}`) || PathPrefix(`${PRIVATE_PATH}/`))}
+      - traefik.http.routers.whoami-private.entrypoints=websecure
+      - traefik.http.routers.whoami-private.middlewares=authelia@file,whoami-nocookie${PRIVATE_PATH:+,whoami-private-strip}
+      - traefik.http.middlewares.whoami-private-strip.stripprefix.prefixes=${PRIVATE_PATH:-/unused}
+      - traefik.http.services.whoami-private.loadbalancer.server.port=80
+      # Entry on the start page (apps/startpage); the link is derived from the rule above.
+      - webstack.startpage.name=Example app (login)
+      - webstack.startpage.description=Shows the request your app receives, including the Remote-User header.
+      - webstack.startpage.logo=logo.svg     # file in this directory; the public service uses the default logo
+
+  # Public: no login
+  public:
+    image: traefik/whoami:v1.12
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.whoami-public.rule=${PUBLIC_HOST:+Host(`${PUBLIC_HOST}`)}${PUBLIC_PATH:+Host(`${DOMAIN}`) && (Path(`${PUBLIC_PATH}`) || PathPrefix(`${PUBLIC_PATH}/`))}
+      - traefik.http.routers.whoami-public.entrypoints=websecure
+      - traefik.http.routers.whoami-public.middlewares=whoami-nocookie${PUBLIC_PATH:+,whoami-public-strip}
+      - traefik.http.middlewares.whoami-public-strip.stripprefix.prefixes=${PUBLIC_PATH:-/unused}
+      # whoami echoes all request headers. It must never see cookies, otherwise it would
+      # reflect the HttpOnly login session cookie to any script on the same origin.
+      - traefik.http.middlewares.whoami-nocookie.headers.customrequestheaders.Cookie=
+      - traefik.http.services.whoami-public.loadbalancer.server.port=80
+      - webstack.startpage.name=Example app (public)
+      - webstack.startpage.description=The same example without login.
+
+networks:
+  proxy:
+    external: true

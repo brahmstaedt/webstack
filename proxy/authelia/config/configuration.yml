@@ -1,0 +1,80 @@
+# Authelia configuration.
+# - Secrets are NOT in here: they come from /secrets/* via the *_FILE environment variables.
+# - {{ env "DOMAIN" }} is replaced with DOMAIN from proxy/.env (X_AUTHELIA_CONFIG_FILTERS=template).
+
+server:
+  # Serve the portal under https://<DOMAIN>/auth/ so a single domain is enough.
+  address: "tcp://:9091/auth"
+
+log:
+  level: info
+
+theme: auto
+
+totp:
+  issuer: '{{ env "DOMAIN" }}'
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    watch: true
+    password:
+      algorithm: argon2
+
+# Rules are evaluated top-down; the first match wins.
+#
+# Each app has one address: its own host OR a sub-path on DOMAIN. A path-based rule must
+# match that address (^/<path>/admin on DOMAIN, or ^/admin on the own host). The example rules
+# below cover both variants of the example app; verify.sh tests the one that is configured.
+access_control:
+  default_policy: deny
+  rules:
+    # Example app: /admin area for group "admins" only.
+    - domain: '{{ env "DOMAIN" }}'
+      resources: ['^/private/admin([/?].*)?$']
+      subject: 'group:admins'
+      policy: one_factor
+    - domain: '{{ env "DOMAIN" }}'
+      resources: ['^/private/admin([/?].*)?$']
+      policy: deny
+    - domain: 'private.{{ env "DOMAIN" }}'
+      resources: ['^/admin([/?].*)?$']
+      subject: 'group:admins'
+      policy: one_factor
+    - domain: 'private.{{ env "DOMAIN" }}'
+      resources: ['^/admin([/?].*)?$']
+      policy: deny
+
+    # Everything else that uses the authelia@file middleware: any logged-in user.
+    # Use policy: two_factor to require TOTP/passkey.
+    - domain:
+        - '{{ env "DOMAIN" }}'
+        - '*.{{ env "DOMAIN" }}'
+      policy: one_factor
+
+session:
+  cookies:
+    # Covers <DOMAIN> and all its subdomains. Apps on a completely different domain
+    # need an additional entry here (see docs/app-interface.md).
+    - domain: '{{ env "DOMAIN" }}'
+      authelia_url: 'https://{{ env "DOMAIN" }}/auth'
+      # Where users land after logout (or login) when no other target is given: the start page.
+      default_redirection_url: 'https://{{ env "DOMAIN" }}/'
+      expiration: 12h
+      inactivity: 2h
+      remember_me: 30d
+
+regulation:
+  max_retries: 5
+  find_time: 2m
+  ban_time: 10m
+
+storage:
+  local:
+    path: /config/data/db.sqlite3
+
+# No SMTP server: password-reset and 2FA-enrollment messages are written to a file.
+# Read them on the host:  cat proxy/authelia/data/notification.txt
+notifier:
+  filesystem:
+    filename: /config/data/notification.txt

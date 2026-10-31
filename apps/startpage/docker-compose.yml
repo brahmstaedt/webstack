@@ -1,0 +1,40 @@
+# Start page at https://<DOMAIN>/ listing all apps that declare a start page entry.
+# Public by default; set STARTPAGE_AUTH=authelia@file in apps/startpage/.env to require a login.
+#
+# The page is static HTML, generated on the host by generate.sh from the labels of the
+# running containers. watch.sh (run by ops/systemd/webstack-startpage@.service) regenerates
+# it whenever a container starts or stops. This container has no Docker access: it only
+# serves the generated file.
+#
+# An app gets listed by adding these labels to its service (see docs/app-interface.md):
+#   webstack.startpage.name=My app
+#   webstack.startpage.description=One sentence about what it does
+name: startpage
+
+services:
+  web:
+    image: nginxinc/nginx-unprivileged:1.30-alpine   # runs as non-root; minor series
+    restart: unless-stopped
+    logging:
+      driver: local        # rotated logs
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./html:/usr/share/nginx/html:ro
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      # Only the exact root path. Everything else on DOMAIN stays with the apps (or 404).
+      - traefik.http.routers.startpage.rule=Host(`${DOMAIN:?set DOMAIN in apps/startpage/.env}`) && Path(`/`)
+      - traefik.http.routers.startpage.entrypoints=websecure
+      # Public by default. STARTPAGE_AUTH=authelia@file in apps/startpage/.env requires a login.
+      - traefik.http.routers.startpage.middlewares=${STARTPAGE_AUTH:+${STARTPAGE_AUTH},}startpage-headers
+      - traefik.http.middlewares.startpage-headers.headers.customresponseheaders.X-Robots-Tag=noindex
+      - traefik.http.services.startpage.loadbalancer.server.port=8080
+
+networks:
+  proxy:
+    external: true

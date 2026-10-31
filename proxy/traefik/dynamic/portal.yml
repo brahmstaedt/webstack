@@ -1,0 +1,17 @@
+# Login portal route, defined here (file provider) and NOT via Docker labels: app labels share
+# one namespace, so an app defining a router or service named like the portal could otherwise
+# remove the portal or receive login requests. The very high priority keeps apps from
+# shadowing /auth with their own rules. DOMAIN comes from the traefik container's environment.
+http:
+  routers:
+    authelia-portal:
+      rule: 'Host(`{{ env "DOMAIN" }}`) && (Path(`/auth`) || PathPrefix(`/auth/`))'
+      entryPoints:
+        - websecure
+      service: authelia-portal
+      priority: 1000000
+  services:
+    authelia-portal:
+      loadBalancer:
+        servers:
+          - url: "http://authelia:9091"

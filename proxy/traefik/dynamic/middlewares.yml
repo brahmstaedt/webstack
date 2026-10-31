@@ -1,0 +1,41 @@
+# Traefik dynamic configuration: shared middlewares, usable from any app as <name>@file.
+
+http:
+  middlewares:
+    # Login required. Add to a router with:
+    #   traefik.http.routers.<name>.middlewares=authelia@file
+    authelia:
+      forwardAuth:
+        address: "http://authelia:9091/auth/api/authz/forward-auth"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - Remote-User
+          - Remote-Groups
+          - Remote-Email
+          - Remote-Name
+
+    # Applied to ALL responses on the websecure entrypoint (see traefik.yml).
+    # - HSTS without includeSubDomains/preload: other subdomains of DOMAIN may not be ours.
+    # - SAMEORIGIN instead of DENY: apps on the same domain may embed each other.
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        referrerPolicy: strict-origin-when-cross-origin
+
+    # Applied to ALL requests on the websecure entrypoint (see traefik.yml).
+    # An empty value removes the header.
+    strip-auth-headers:
+      headers:
+        customRequestHeaders:
+          Remote-User: ""
+          Remote-Groups: ""
+          Remote-Email: ""
+          Remote-Name: ""
+          # Underscore spellings: CGI/WSGI-style backends map them to the same variable
+          # (HTTP_REMOTE_USER), so they must not reach apps either.
+          Remote_User: ""
+          Remote_Groups: ""
+          Remote_Email: ""
+          Remote_Name: ""

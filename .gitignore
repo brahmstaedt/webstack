@@ -1,0 +1,7 @@
+proxy/authelia/secrets/
+proxy/authelia/config/users_database.yml
+proxy/authelia/data/
+proxy/.env
+apps/*/.env
+apps/startpage/html/*
+!apps/startpage/html/.gitkeep

@@ -1,0 +1,21 @@
+# Copy to users_database.yml and replace the password hashes.
+# Generate a hash with:
+#   docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 --password 'the-password'
+# (copy the part after "Digest: ")
+#
+# Groups are used by access_control rules in configuration.yml and are passed to
+# backends in the Remote-Groups header.
+
+users:
+  alice:
+    displayname: "Alice Smith"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME"
+    email: alice@example.com
+    groups:
+      - admins
+  bob:
+    displayname: "Bob Jones"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME"
+    email: bob@example.com
+    groups:
+      - users

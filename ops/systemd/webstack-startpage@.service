@@ -1,0 +1,18 @@
+# Regenerates the start page whenever a container starts or stops.
+# The instance name is the user that owns the repository (must be in group "docker"):
+#   sudo cp ops/systemd/webstack-startpage@.service /etc/systemd/system/
+#   sudo systemctl enable --now webstack-startpage@<user>.service
+# Adjust the path if the repository is not in /srv/webstack.
+[Unit]
+Description=webstack start page generator (user %i)
+After=docker.service
+Requires=docker.service
+
+[Service]
+User=%i
+ExecStart=/srv/webstack/apps/startpage/watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

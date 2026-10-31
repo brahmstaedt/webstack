@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint scripts and configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y -qq shellcheck >/dev/null
+          shellcheck -S warning $(git ls-files '*.sh')
+
+      - name: YAML syntax
+        run: |
+          python3 -m pip install -q pyyaml
+          python3 - <<'EOF'
+          import subprocess, yaml
+          files = subprocess.check_output(["git", "ls-files", "*.yml", "*.yaml"], text=True).split()
+          for f in files:
+              yaml.safe_load(open(f))
+              print("ok", f)
+          EOF
+
+      - name: Compose files resolve (all addressing modes)
+        env:
+          DOMAIN: example.com
+          PUID: "1000"
+          PGID: "1000"
+        run: |
+          set -e
+          docker compose -f proxy/docker-compose.yml config -q
+          docker compose -f apps/startpage/docker-compose.yml config -q
+          # own hosts, sub-paths
+          PRIVATE_HOST=private.example.com PUBLIC_HOST=public.example.com docker compose -f apps/whoami/docker-compose.yml config -q
+          PRIVATE_PATH=/private PUBLIC_PATH=/public docker compose -f apps/whoami/docker-compose.yml config -q
+
+  end-to-end:
+    name: End-to-end test (hosts, single, update and rollback)
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tools
+        run: |
+          docker compose version
+          command -v jq openssl curl
+
+      - name: Run test/local-test.sh run
+        shell: bash   # -eo pipefail: a failing test must fail the step despite the tee
+        run: test/local-test.sh run 2>&1 | tee local-test.log
+
+      - name: Keep the log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-test-log
+          path: local-test.log
+          if-no-files-found: ignore

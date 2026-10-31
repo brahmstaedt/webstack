@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily container update
+
+[Timer]
+OnCalendar=*-*-* 04:00
+RandomizedDelaySec=30m
+# Run at next boot if the VM was off at the scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target

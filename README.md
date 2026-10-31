@@ -316,3 +316,17 @@ docker run --rm -i -v proxy_letsencrypt:/v --entrypoint tar traefik:v3.7 -xzf - 
 (cd proxy && docker compose up -d)
 # then your apps, the start page and the systemd units as in Setup; finally ./verify.sh
 ```
+
+## Development
+
+Two scripts, run locally and in CI (`.github/workflows/ci.yml`) on every push:
+
+```sh
+test/lint.sh          # shellcheck (pinned version), YAML syntax, compose files in every mode
+test/local-test.sh run   # full end-to-end test, including update and rollback (needs Docker)
+```
+
+`test/lint.sh` uses a pinned shellcheck version, because new shellcheck releases add checks
+and would otherwise give different results on different machines. If your installed
+shellcheck is a different version, the script downloads the official binary once, verifies
+its checksum, and caches it in `~/.cache/webstack/`.

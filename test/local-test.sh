@@ -174,8 +174,8 @@ cmd_verify() {
   return $rc
 }
 
-# PASS/FAIL line for the update test; $1 = condition result (0 = pass), $2 = text
-check() { if [[ "$1" == 0 ]]; then echo "  PASS  $2"; else echo "  FAIL  $2"; UPD_RC=1; fi; }
+# PASS/FAIL line for the update test: expect "<text>" <command...> passes if the command succeeds.
+expect() { local text="$1"; shift; if "$@"; then echo "  PASS  $text"; else echo "  FAIL  $text"; UPD_RC=1; fi; }
 
 cmd_update_test() {
   test_env
@@ -199,9 +199,9 @@ cmd_update_test() {
   downgrade
   docker pull -q traefik/whoami:v1.12 >/dev/null     # tag is new now, the container still runs the old image
   code=0; ./update.sh > test/update-a.log 2>&1 || code=$?   # set -e must not abort on the expected codes
-  check $(( code != 0 )) "update.sh exits 0 (got $code, log: test/update-a.log)"
-  check "$([[ "$(running)" == "$new" ]]; echo $?)" "the example app runs the current image afterwards"
-  check "$(grep -q 'skip apps/zz-undeployed (not deployed)' test/update-a.log; echo $?)" "an undeployed app directory is skipped"
+  expect "update.sh exits 0 (got $code, log: test/update-a.log)" test "$code" -eq 0
+  expect "the example app runs the current image afterwards" test "$(running)" = "$new"
+  expect "an undeployed app directory is skipped" grep -q 'skip apps/zz-undeployed (not deployed)' test/update-a.log
 
   log "update test B: a failing check after the update rolls back"
   downgrade
@@ -216,13 +216,13 @@ W
   chmod +x verify.sh; rm -f test/verify-calls
   code=0; ./update.sh > test/update-b.log 2>&1 || code=$?   # set -e must not abort on the expected codes
   mv verify.real.sh verify.sh; rm -f test/verify-calls
-  check $(( code != 4 )) "update.sh exits 4 (rolled back) (got $code, log: test/update-b.log)"
-  check "$([[ "$(running)" == "$old" ]]; echo $?)" "the example app runs the previous image again"
+  expect "update.sh exits 4 (rolled back) (got $code, log: test/update-b.log)" test "$code" -eq 4
+  expect "the example app runs the previous image again" test "$(running)" = "$old"
 
   log "update test C: the next normal run applies the update"
   code=0; ./update.sh > test/update-c.log 2>&1 || code=$?   # set -e must not abort on the expected codes
-  check $(( code != 0 )) "update.sh exits 0 (got $code, log: test/update-c.log)"
-  check "$([[ "$(running)" == "$new" ]]; echo $?)" "the example app runs the current image"
+  expect "update.sh exits 0 (got $code, log: test/update-c.log)" test "$code" -eq 0
+  expect "the example app runs the current image" test "$(running)" = "$new"
 
   rm -rf apps/zz-undeployed
   return $UPD_RC
